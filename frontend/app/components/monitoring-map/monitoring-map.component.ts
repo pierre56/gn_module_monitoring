@@ -33,12 +33,16 @@ export class MonitoringMapComponent implements OnInit {
 
   @Input() heightMap;
 
+  mapCenter: number[];
+  mapZoom: number;
+  shouldFitCurrentSite = true;
+
   bListen = true;
   panes = {};
   renderers = {};
   map;
   selectedSiteId: Number;
-  currentSiteId: Number;
+  currentSiteId: number | null;
   publicDisplaySitesGroup: boolean = false;
 
   listObjectSubscription: any;
@@ -89,6 +93,16 @@ export class MonitoringMapComponent implements OnInit {
   ) {}
 
   ngOnInit() {
+    const currentExtent = this._mapService.currentExtend;
+    if (currentExtent) {
+      this.mapCenter = [currentExtent.center.lat, currentExtent.center.lng];
+      this.mapZoom = currentExtent.zoom;
+      this.shouldFitCurrentSite = false;
+    } else {
+      this.mapCenter = this._mapService.config.MAPCONFIG.CENTER;
+      this.mapZoom = this._mapService.config.MAPCONFIG.ZOOM_LEVEL;
+    }
+
     // gestion des interractions carte list
     const tableType = ['sites_group', 'site'];
 
@@ -137,16 +151,11 @@ export class MonitoringMapComponent implements OnInit {
     }
 
     this._geojsonService.removeAllFeatureGroup();
-    if (displayObject == 'site') {
-      const params = {
-        ...this.listService.getPrefilterByType(displayObject),
-        ...this.listService.tableFilters$.getValue(),
-      };
-      this._geojsonService.getSitesGroupsChildGeometries(
-        this.onEachFeatureSite(this.buildQueryParams('site')),
-        params
-      );
-    } else if (displayObject == 'sites_group') {
+    const sitePrefilter = this.listService.getPrefilterByType('site') || {};
+    const currentSiteId = sitePrefilter['id_base_site'];
+    this.currentSiteId = currentSiteId == null ? null : Number(currentSiteId);
+
+    if (displayObject == 'sites_group') {
       const params = {
         ...this.listService.getPrefilterByType(displayObject),
         ...this.listService.tableFilters$.getValue(),
@@ -170,6 +179,8 @@ export class MonitoringMapComponent implements OnInit {
         paramsSitesGroup,
         paramsSite
       );
+    } else {
+      this.displaySites();
     }
   }
 
@@ -186,7 +197,29 @@ export class MonitoringMapComponent implements OnInit {
   }
 
   onEachFeatureSite(queryParams) {
+    const labelField =
+      this._configService.configModuleObjectParam(
+        this.obj.moduleCode,
+        'site',
+        'map_label_field_name'
+      ) || 'base_site_name';
+
     return (feature, layer) => {
+      const siteId = Number(feature.properties['id_base_site']);
+      const label = feature.properties[labelField] ?? feature.properties['base_site_name'];
+
+      if (label != null) {
+        layer.bindTooltip(String(label), { permanent: true, direction: 'top', opacity: 0.8 });
+      }
+
+      if (siteId === this.currentSiteId) {
+        layer.setStyle(this.styles.current);
+        if (this.shouldFitCurrentSite) {
+          this._mapService.getMap().fitBounds(L.featureGroup([layer]).getBounds());
+          this.shouldFitCurrentSite = false;
+        }
+      }
+
       const popup = this._popup.setSitePopup(this.obj.moduleCode, feature, queryParams);
       layer.bindPopup(popup);
     };
@@ -244,5 +277,13 @@ export class MonitoringMapComponent implements OnInit {
     // Réinitalisations des paramètres
     this.listService.reinitializeObservables();
     this.listObjectSubscription.unsubscribe();
+  }
+
+  private displaySites() {
+    this._geojsonService.getSitesGroupsChildGeometries(
+      this.onEachFeatureSite(this.buildQueryParams('site')),
+      {},
+      'info'
+    );
   }
 }

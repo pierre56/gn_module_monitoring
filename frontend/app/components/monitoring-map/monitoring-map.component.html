@@ -4,6 +4,8 @@
 >
   <pnx-map
     [height]="heightMap"
+    [center]="mapCenter"
+    [zoom]="mapZoom"
     [geolocation]="true"
     [ngClass]="{ 'hide-draw-form': !(bEdit && obj && obj.config['geometry_type']) }"
   >

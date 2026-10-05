@@ -5,6 +5,8 @@ import { ReplaySubject, forkJoin, of } from 'rxjs';
 import { mergeMap, map } from 'rxjs/operators';
 import { AuthService, User } from '@geonature/components/auth/auth.service';
 import { ModuleService } from '@geonature/services/module.service';
+import { MapService } from '@geonature_common/map/map.service';
+import * as L from 'leaflet';
 
 import { MonitoringGeomComponent } from '../../class/monitoring-geom-component';
 import { IdataTableObjData, ISite, ISiteField, ISiteType } from '../../interfaces/geom';
@@ -72,7 +74,8 @@ export class MonitoringSitesDetailComponent extends MonitoringGeomComponent impl
     private _objServiceMonitoring: DataMonitoringObjectService,
     private _permissionService: PermissionService,
     private _popup: Popup,
-    private _monitoringObjServiceMonitoring: MonitoringObjectService
+    private _monitoringObjServiceMonitoring: MonitoringObjectService,
+    private _mapService: MapService
   ) {
     super();
     this.getAllItemsCallback = this.getVisits;
@@ -127,10 +130,7 @@ export class MonitoringSitesDetailComponent extends MonitoringGeomComponent impl
             this._monitoringObjServiceMonitoring
           );
 
-          // Récupération et affichage de la géométrie du site
-          this.geojsonService.getSitesGroupsChildGeometries(this.onEachFeatureSite(), {
-            id_base_site: siteId,
-          });
+          this.displaySites(siteId);
 
           // Récupération des données et des configurations
           //  pour le site et les visites associées
@@ -209,8 +209,27 @@ export class MonitoringSitesDetailComponent extends MonitoringGeomComponent impl
       });
   }
 
-  onEachFeatureSite() {
+  onEachFeatureSite(currentSiteId: number) {
+    const labelField =
+      this._configService.configModuleObjectParam(
+        this.moduleCode,
+        'site',
+        'map_label_field_name'
+      ) || 'base_site_name';
+
     return (feature, layer) => {
+      const siteId = Number(feature.properties['id_base_site']);
+      const label = feature.properties[labelField] ?? feature.properties['base_site_name'];
+
+      if (label != null) {
+        layer.bindTooltip(String(label), { permanent: true, direction: 'top', opacity: 0.8 });
+      }
+
+      if (siteId === currentSiteId) {
+        layer.setStyle({ color: '#3388ff', fillColor: '#3388ff', weight: 3 });
+        this._mapService.getMap().fitBounds(L.featureGroup([layer]).getBounds());
+      }
+
       const popup = this._popup.setSitePopup(this.moduleCode, feature, {});
       layer.bindPopup(popup);
     };
@@ -299,10 +318,7 @@ export class MonitoringSitesDetailComponent extends MonitoringGeomComponent impl
     if (this.bEdit == true && event == false) {
       // Passage du mode édition au mode consultation : on suppose que des modifications de géométries
       //  ont pu être faites
-      // Récupération et affichage de la géométrie du site
-      this.geojsonService.getSitesGroupsChildGeometries(this.onEachFeatureSite(), {
-        id_base_site: this.site.id_base_site,
-      });
+      this.displaySites(this.site.id_base_site);
     }
     this.bEdit = event;
     if (this.bEdit) {
@@ -321,5 +337,13 @@ export class MonitoringSitesDetailComponent extends MonitoringGeomComponent impl
       frmGp: null,
       obj: {},
     });
+  }
+
+  private displaySites(currentSiteId: number) {
+    this.geojsonService.getSitesGroupsChildGeometries(
+      this.onEachFeatureSite(Number(currentSiteId)),
+      {},
+      'info'
+    );
   }
 }
